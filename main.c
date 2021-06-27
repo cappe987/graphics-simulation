@@ -2,6 +2,9 @@
 #include <X11/Xutil.h>
 #include <X11/Xos.h>
 #include <X11/extensions/Xdbe.h>
+#include <X11/Xft/Xft.h>
+#include <X11/extensions/Xrender.h>
+#include <X11/Xcms.h>
 
 /* include some silly stuff */
 #include <stdio.h>
@@ -9,6 +12,8 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <math.h>
+
+#include "collision.h"
 
 /* here are our X variables */
 Display *dis;
@@ -32,26 +37,42 @@ struct bufAttr{
 };
 
 
-int euclid_dist(int x1, int y1, int x2, int y2){
-  return sqrt(pow(x1 - x2, 2) + pow(y1 - y2,2));
+// Returns if it printed the fps, meaning a second had passed and variables should reset.
+int printFPS(Display* dis, Window win, GC gc, time_t curr, time_t prev, int frameCounter, int prevFPS){
+  int retvalue = 0;
+  int fps;
+  if (curr > prev){
+    int diff = curr - prev;
+    fps = frameCounter / diff;
+    retvalue = fps;
+  }
+  else{
+    fps = prevFPS;
+  }
+  char str[10] = {0};
+  snprintf(str, 10, "%d", fps);
+  for (int i = 0; i < 10; i++){
+    if (str[i] == 0){
+      str[i] = ' ';
+    }
+  }
+  XGCValues values;
+  values.font = XLoadFont(dis, "lucidasans-bold-18");
+  GC str_gc = XCreateGC(dis, win, 1L<<14, &values);
+  XSetForeground(dis, gc, 0x4c594b);
+  XFillRectangle(dis, win, gc, 10, 10, 100, 40);
+  XSetForeground(dis, str_gc, 0x319e28);
+  XDrawString(dis, win, str_gc, 15, 40, str, 10);
+  return retvalue;
 }
 
-void drawGreens(){
-  XSetForeground(dis, gc, 0x00FF00);
-  for (int i = 0; i < obstCount; i++){
-    int diameter = obstacles[i].height;
-    XFillArc(dis, win, gc, obstacles[i].x-(obstacles[i].width/2), obstacles[i].y-(obstacles[i].height/2), diameter, diameter, 0, 360*64);
-  }
-  return;
-}
 
 void* movingBlocks(void *args){
   const int LEN = 100;
-  /*XPoint blocks[LEN];*/
-  XArc blocks[LEN];
+  /*XPoint balls[LEN];*/
+  XArc balls[LEN];
   int prevXs[LEN];
-  int speeds[LEN];
-  const int radius = 10;
+  Direction dirs[LEN];
   struct bufAttr bufattr = * (struct bufAttr*) args;
   XWindowAttributes attr = bufattr.attr;
   /*XdbeBackBuffer buf = bufattr.buf;*/
@@ -61,58 +82,58 @@ void* movingBlocks(void *args){
   /*printf("%d\n", attr.height);*/
 
   for (int i = 0; i < LEN; i++){
-    /*XPoint xy;*/
-    XArc xy;
-    xy.x = rand() % attr.width;
-    xy.y = rand() % attr.height;
-    xy.width = radius;
-    xy.height = radius;
-    xy.angle1 = 0;
-    xy.angle2 = 360*64;
-    blocks[i] = xy;
-
-    speeds[i] = rand() % 5 + 1;
+    balls[i] = circle_create(rand() % attr.width, rand() % attr.height, 10);
+    dirs[i].y = rand() % 5 + 1;
+    dirs[i].x = 0;
     prevXs[i] = -1;
   }
 
+  time_t prev = time(0);
+  time_t curr; 
+  int frameCounter = 0;
+  int prevFPS = 0;
+
   while(1){
-    usleep(5000);
+    usleep(10000); // Maybe make frames not dependent on fps
+    frameCounter++;
     XLockDisplay(dis);
-    XSetForeground(dis, gc, 0xFFFFFF);
-    XFillArcs(dis, win, gc, blocks, LEN);
+    draw_circles(dis, win, gc, balls, LEN, 0xFFFFFF); // Clear previous balls
+
+    // Update ball positions
     for(int i = 0; i < LEN; i++){
-      int prevY = blocks[i].y;
-      /*blocks[i].y = (blocks[i].y + speeds[i]) % attr.height;*/
-      int newY = blocks[i].y + speeds[i];
+      int newY = balls[i].y + dirs[i].y;
       if (newY >= attr.height){ // Probably place this after collision detection
-        blocks[i].y = 0;
-        blocks[i].x = rand() % attr.width;
+        balls[i].y = 0;
+        balls[i].x = rand() % attr.width;
       }
       else{
         int collided = 0;
         for (int j = 0; j < obstCount; j++){
-          int nextDist = euclid_dist(obstacles[j].x, obstacles[j].y, blocks[i].x + 5, blocks[i].y + 5);
-          int overlapDist = obstacles[j].height/2 + blocks[i].height/2;
-          if (nextDist < overlapDist){
+          XPoint center1 = circle_get_center(obstacles[j]);
+          int r1 = circle_get_radius(obstacles[j]);
+          XPoint center2 = circle_get_center(balls[i]);
+          int r2 = circle_get_radius(balls[i]);
+          int nextDist = euclid_dist_xpoint2(center1, center2);
+          if (nextDist < r1 + r2){
             // Intersects
-            if (obstacles[j].x > blocks[i].x + 5){
-              if (blocks[i].x - speeds[i] == prevXs[i]){
+            if (center1.x > center2.x){
+              if (balls[i].x - dirs[i].y == prevXs[i]){
                 collided = 1; // Keep it still when stuck
                 break;
               }
               else{
-                prevXs[i] = blocks[i].x;
-                blocks[i].x -= speeds[i];
+                prevXs[i] = balls[i].x;
+                balls[i].x -= dirs[i].y;
               }
             }
             else{
-              if (blocks[i].x + speeds[i] == prevXs[i]){
+              if (balls[i].x + dirs[i].y == prevXs[i]){
                 collided = 1; // Keep it still when stuck
                 break;
               }
               else{
-                prevXs[i] = blocks[i].x;
-                blocks[i].x += speeds[i];
+                prevXs[i] = balls[i].x;
+                balls[i].x += dirs[i].y;
               }
             }
             collided = 1;
@@ -120,18 +141,29 @@ void* movingBlocks(void *args){
           }
         }
         if (!collided){
-          blocks[i].y = newY;
+          balls[i].y = newY;
         }
       }
     }
 
 
-    drawGreens();
+    // Draw new balls
+    draw_circles(dis, win, gc, balls, LEN, 0x0000FF);
+    draw_circles(dis, win, gc, obstacles, obstCount, 0x00FF00);
 
-    usleep(10000);
-    XSetForeground(dis, gc, 0x0000FF);
-    XFillArcs(dis, win, gc, blocks, LEN);
-    XSetForeground(dis, gc, 0xFFFFFF);
+    /*usleep(10000);*/
+    /*XSetForeground(dis, gc, 0x0000FF);*/
+    /*XFillArcs(dis, win, gc, balls, LEN);*/
+    /*XSetForeground(dis, gc, 0xFFFFFF);*/
+
+    curr = time(0);
+    int res = printFPS(dis, win, gc, curr, prev, frameCounter, prevFPS);
+    if (res != 0){
+      frameCounter = 0;
+      prev = curr;
+      prevFPS = res;
+    }
+
     XFlush(dis);
     XUnlockDisplay(dis);
   }
@@ -149,7 +181,7 @@ int main() {
   XEvent event;		/* the XEvent declaration !!! */
   KeySym key;		/* a dealie-bob to handle KeyPress Events */	
   char text[255];		/* a char buffer for KeyPress Events */
-  int button_holding = 0;
+  /*int button_holding = 0;*/
   int isFirst = 1;
   XInitThreads();
 
@@ -209,38 +241,34 @@ int main() {
       int x=event.xbutton.x,
           y=event.xbutton.y;
 
-      // strcpy(text,"X is FUN!");
+      /*char text[20];*/
+      /*strcpy(text,"X is FUN!");*/
       // XSetForeground(dis,gc,rand()%event.xbutton.x%255);
-      // XDrawString(dis,win,gc,x,y, text, strlen(text));
+      /*XDrawString(dis,win,gc,x,y, text, strlen(text));*/
       // printf("DRAWING\n");
-      const int radius = 200;
       if (event.xbutton.button == Button1){
-        XSetForeground(dis, gc, 0x00FF00);
-        XFillArc(dis, win, gc, x-(radius/2), y-(radius/2), radius, radius, 0, 360*64);
-        XSetForeground(dis, gc, 0x000000);
+        /*XSetForeground(dis, gc, 0x00FF00);*/
+        /*XFillArc(dis, win, gc, x-(radius/2), y-(radius/2), radius, radius, 0, 360*64);*/
+        /*XSetForeground(dis, gc, 0x000000);*/
         /*XDrawPoint(dis, win, gc, x, y);*/
         /*XDrawPoint(dis, win, gc, x+25, y+25);*/
-        XArc obst;
-        obst.x = x;
-        obst.y = y;
-        obst.width = radius;
-        obst.height = radius;
-        obst.angle1 = 0;
-        obst.angle2 = 360*64;
+        XArc obst = circle_create(x, y, 100);
         obstacles[obstCount] = obst;
         // XFillRectangle(dis, win, gc, x, y, 500, 500);
-        button_holding = 1;
+        /*button_holding = 1;*/
         obstCount++;
       }
       else if (event.xbutton.button == Button3){
         /*XClearArea(dis, win, x, y, 50, 50, 0);*/
         /*button_holding = 3;*/
-        int r = radius/2;
         for (int i = 0; i < obstCount; i++){
-          int dist = euclid_dist(x, y, obstacles[i].x, obstacles[i].y);
+          XPoint center = circle_get_center(obstacles[i]);
+          int r = circle_get_radius(obstacles[i]);
+          int dist = euclid_dist_xpoint(x, y, center);
           if (dist < r){
-            XSetForeground(dis, gc, 0xFFFFFF);
-            XFillArc(dis, win, gc, obstacles[i].x-(radius/2), obstacles[i].y-(radius/2), radius, radius, 0, 360*64);
+            /*XSetForeground(dis, gc, 0xFFFFFF);*/
+            /*XFillArc(dis, win, gc, obstacles[i].x-(radius/2), obstacles[i].y-(radius/2), radius, radius, 0, 360*64);*/
+            draw_circles(dis, win, gc, &(obstacles[i]), 1, 0xFFFFFF);
             for (int j = i; j < obstCount-1; j++){
               obstacles[j] = obstacles[j+1];
             }

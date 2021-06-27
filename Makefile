@@ -2,5 +2,9 @@
 all: build
 
 
+files = collision.c main.c
+
+dirs = -I /usr/include/freetype2/
+
 build:
-	gcc main.c -lpthread -o main -lX11 -lXext -lXdamage -lXfixes -lXtst -lm
+	gcc $(files) $(dirs) -Wall -lpthread -o main -lX11 -lXext -lXdamage -lXfixes -lXtst -lm -lXft
