@@ -1,7 +1,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/Xos.h>
-#include <X11/extensions/Xdbe.h>
+/*#include <X11/extensions/Xdbe.h>*/
 #include <X11/Xft/Xft.h>
 #include <X11/extensions/Xrender.h>
 #include <X11/Xcms.h>
@@ -14,6 +14,7 @@
 #include <math.h>
 
 #include "collision.h"
+#include "fps.h"
 
 /* here are our X variables */
 Display *dis;
@@ -21,7 +22,6 @@ int screen;
 Window win;
 GC gc;
 
-pthread_mutex_t lock;
 
 XArc obstacles[100];
 unsigned int obstCount = 0;
@@ -33,42 +33,14 @@ void redraw();
 
 struct bufAttr{
   XWindowAttributes attr;
-  XdbeBackBuffer buf;
+  /*XdbeBackBuffer buf;*/
 };
 
 
-// Returns if it printed the fps, meaning a second had passed and variables should reset.
-int printFPS(Display* dis, Window win, GC gc, time_t curr, time_t prev, int frameCounter, int prevFPS){
-  int retvalue = 0;
-  int fps;
-  if (curr > prev){
-    int diff = curr - prev;
-    fps = frameCounter / diff;
-    retvalue = fps;
-  }
-  else{
-    fps = prevFPS;
-  }
-  char str[10] = {0};
-  snprintf(str, 10, "%d", fps);
-  for (int i = 0; i < 10; i++){
-    if (str[i] == 0){
-      str[i] = ' ';
-    }
-  }
-  XGCValues values;
-  values.font = XLoadFont(dis, "lucidasans-bold-18");
-  GC str_gc = XCreateGC(dis, win, 1L<<14, &values);
-  XSetForeground(dis, gc, 0x4c594b);
-  XFillRectangle(dis, win, gc, 10, 10, 100, 40);
-  XSetForeground(dis, str_gc, 0x319e28);
-  XDrawString(dis, win, str_gc, 15, 40, str, 10);
-  return retvalue;
-}
 
 
 void* movingBlocks(void *args){
-  const int LEN = 100;
+  const int LEN = 500;
   /*XPoint balls[LEN];*/
   XArc balls[LEN];
   int prevXs[LEN];
@@ -77,31 +49,38 @@ void* movingBlocks(void *args){
   XWindowAttributes attr = bufattr.attr;
   /*XdbeBackBuffer buf = bufattr.buf;*/
 
-  /*Status st = XGetWindowAttributes(dis, win, &attr);*/
-  /*printf("%d\n", attr.width);*/
-  /*printf("%d\n", attr.height);*/
-
   for (int i = 0; i < LEN; i++){
     balls[i] = circle_create(rand() % attr.width, rand() % attr.height, 10);
-    dirs[i].y = rand() % 5 + 1;
+    dirs[i].y = rand() % 5 + 3;
     dirs[i].x = 0;
     prevXs[i] = -1;
   }
 
-  time_t prev = time(0);
-  time_t curr; 
-  int frameCounter = 0;
-  int prevFPS = 0;
+  struct Fps_info fps_info = init_fps_counter();
+
+  struct timeval prev_time;
+  gettimeofday(&prev_time, NULL);
 
   while(1){
     usleep(10000); // Maybe make frames not dependent on fps
-    frameCounter++;
     XLockDisplay(dis);
     draw_circles(dis, win, gc, balls, LEN, 0xFFFFFF); // Clear previous balls
 
     // Update ball positions
+    struct timeval curr_time;
+    gettimeofday(&curr_time, NULL);
+
+    float milli_diff; 
+    if (prev_time.tv_usec > curr_time.tv_usec){
+      milli_diff = (1000000 - prev_time.tv_usec + curr_time.tv_usec)/10000.0;
+    }
+    else{
+      milli_diff = (curr_time.tv_usec - prev_time.tv_usec)/10000.0;
+    }
+    prev_time = curr_time;
+
     for(int i = 0; i < LEN; i++){
-      int newY = balls[i].y + dirs[i].y;
+      int newY = balls[i].y + (dirs[i].y * milli_diff);
       if (newY >= attr.height){ // Probably place this after collision detection
         balls[i].y = 0;
         balls[i].x = rand() % attr.width;
@@ -156,13 +135,7 @@ void* movingBlocks(void *args){
     /*XFillArcs(dis, win, gc, balls, LEN);*/
     /*XSetForeground(dis, gc, 0xFFFFFF);*/
 
-    curr = time(0);
-    int res = printFPS(dis, win, gc, curr, prev, frameCounter, prevFPS);
-    if (res != 0){
-      frameCounter = 0;
-      prev = curr;
-      prevFPS = res;
-    }
+    print_fps(dis, win, gc, &fps_info);
 
     XFlush(dis);
     XUnlockDisplay(dis);
@@ -176,7 +149,7 @@ void* movingBlocks(void *args){
 int main() {
 
   pthread_t thread_id;
-  pthread_mutex_init(&lock, NULL);
+  /*pthread_mutex_init(&lock, NULL);*/
 
   XEvent event;		/* the XEvent declaration !!! */
   KeySym key;		/* a dealie-bob to handle KeyPress Events */	
