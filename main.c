@@ -32,10 +32,24 @@ struct bufAttr{
 };
 
 
+int euclid_dist(int x1, int y1, int x2, int y2){
+  return sqrt(pow(x1 - x2, 2) + pow(y1 - y2,2));
+}
+
+void drawGreens(){
+  XSetForeground(dis, gc, 0x00FF00);
+  for (int i = 0; i < obstCount; i++){
+    int diameter = obstacles[i].height;
+    XFillArc(dis, win, gc, obstacles[i].x-(obstacles[i].width/2), obstacles[i].y-(obstacles[i].height/2), diameter, diameter, 0, 360*64);
+  }
+  return;
+}
+
 void* movingBlocks(void *args){
   const int LEN = 100;
   /*XPoint blocks[LEN];*/
   XArc blocks[LEN];
+  int prevXs[LEN];
   int speeds[LEN];
   const int radius = 10;
   struct bufAttr bufattr = * (struct bufAttr*) args;
@@ -58,6 +72,7 @@ void* movingBlocks(void *args){
     blocks[i] = xy;
 
     speeds[i] = rand() % 5 + 1;
+    prevXs[i] = -1;
   }
 
   while(1){
@@ -76,16 +91,29 @@ void* movingBlocks(void *args){
       else{
         int collided = 0;
         for (int j = 0; j < obstCount; j++){
-          int nextDist = sqrt(pow(obstacles[j].x - (blocks[i].x + 5), 2) + pow(obstacles[j].y - (newY + 5), 2));
+          int nextDist = euclid_dist(obstacles[j].x, obstacles[j].y, blocks[i].x + 5, blocks[i].y + 5);
           int overlapDist = obstacles[j].height/2 + blocks[i].height/2;
-          /*printf("Dist: %d | Overlapdist: %d\n", nextDist, overlapDist);*/
           if (nextDist < overlapDist){
             // Intersects
             if (obstacles[j].x > blocks[i].x + 5){
-              blocks[i].x -= speeds[i];
+              if (blocks[i].x - speeds[i] == prevXs[i]){
+                collided = 1; // Keep it still when stuck
+                break;
+              }
+              else{
+                prevXs[i] = blocks[i].x;
+                blocks[i].x -= speeds[i];
+              }
             }
             else{
-              blocks[i].x += speeds[i];
+              if (blocks[i].x + speeds[i] == prevXs[i]){
+                collided = 1; // Keep it still when stuck
+                break;
+              }
+              else{
+                prevXs[i] = blocks[i].x;
+                blocks[i].x += speeds[i];
+              }
             }
             collided = 1;
             break;
@@ -96,6 +124,9 @@ void* movingBlocks(void *args){
         }
       }
     }
+
+
+    drawGreens();
 
     usleep(10000);
     XSetForeground(dis, gc, 0x0000FF);
@@ -146,8 +177,8 @@ int main() {
     /*continue;*/
     ////////////////////////////////////////////////////////////////////
 
-    XLockDisplay(dis);
     if (event.type==Expose && event.xexpose.count==0) {
+      XLockDisplay(dis);
       /* the window was exposed redraw it! */
       redraw();
       if (isFirst){ // Start rain thread first iteration.
@@ -157,9 +188,10 @@ int main() {
         pthread_create(&thread_id, NULL, movingBlocks, &attr);
         isFirst = 0;
       }
+      XUnlockDisplay(dis);
     }
-    else if (event.type==KeyPress&&
-        XLookupString(&event.xkey,text,255,&key,0)==1) {
+    else if (event.type==KeyPress && XLookupString(&event.xkey,text,255,&key,0)==1) {
+      XLockDisplay(dis);
       if (text[0]=='q') {
         close_x();
       }
@@ -169,8 +201,10 @@ int main() {
       else{
         printf("You pressed the %c key!\n",text[0]);
       }
+      XUnlockDisplay(dis);
     }
     else if (event.type==ButtonPress) {
+      XLockDisplay(dis);
       /* tell where the mouse Button was Pressed */
       int x=event.xbutton.x,
           y=event.xbutton.y;
@@ -179,8 +213,8 @@ int main() {
       // XSetForeground(dis,gc,rand()%event.xbutton.x%255);
       // XDrawString(dis,win,gc,x,y, text, strlen(text));
       // printf("DRAWING\n");
+      const int radius = 200;
       if (event.xbutton.button == Button1){
-        const int radius = 200;
         XSetForeground(dis, gc, 0x00FF00);
         XFillArc(dis, win, gc, x-(radius/2), y-(radius/2), radius, radius, 0, 360*64);
         XSetForeground(dis, gc, 0x000000);
@@ -199,18 +233,32 @@ int main() {
         obstCount++;
       }
       else if (event.xbutton.button == Button3){
-        XClearArea(dis, win, x, y, 50, 50, 0);
-        button_holding = 3;
+        /*XClearArea(dis, win, x, y, 50, 50, 0);*/
+        /*button_holding = 3;*/
+        int r = radius/2;
+        for (int i = 0; i < obstCount; i++){
+          int dist = euclid_dist(x, y, obstacles[i].x, obstacles[i].y);
+          if (dist < r){
+            XSetForeground(dis, gc, 0xFFFFFF);
+            XFillArc(dis, win, gc, obstacles[i].x-(radius/2), obstacles[i].y-(radius/2), radius, radius, 0, 360*64);
+            for (int j = i; j < obstCount-1; j++){
+              obstacles[j] = obstacles[j+1];
+            }
+            obstCount--;
+            break;
+          }
+        }
       }
        /*XDrawImageString(dis, win, gc, x, y, "HELLO", 5);*/
+      XUnlockDisplay(dis);
     }
-    else if (event.type == ButtonRelease){
-      button_holding = 0;
-      // if (event.xbutton.button == Button1){
-      //   printf("Released\n");
-      //   button_holding = 0;
-      // }
-    }
+    /*else if (event.type == ButtonRelease){*/
+      /*button_holding = 0;*/
+      /*// if (event.xbutton.button == Button1){*/
+      /*//   printf("Released\n");*/
+      /*//   button_holding = 0;*/
+      /*// }*/
+    /*}*/
     /*else if (event.type == MotionNotify){*/
       /*int x=event.xbutton.x,*/
           /*y=event.xbutton.y;*/
