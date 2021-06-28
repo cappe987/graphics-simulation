@@ -13,7 +13,7 @@
 #include <unistd.h>
 #include <math.h>
 
-#include "collision.h"
+#include "physics.h"
 #include "fps.h"
 #include "circle.h"
 
@@ -43,17 +43,17 @@ struct bufAttr{
 void* game_loop(void *args){
   const int LEN = 100;
   Circle balls[LEN];
-  int prevXs[LEN]; // Used to make balls not wobble when stuck. Refactor this.
+  /*int prevXs[LEN]; // Used to make balls not wobble when stuck. Refactor this.*/
   Velocity vel[LEN];
   struct bufAttr bufattr = * (struct bufAttr*) args;
   XWindowAttributes attr = bufattr.attr;
   XdbeBackBuffer buf = bufattr.buf;
 
   for (int i = 0; i < LEN; i++){
-    vel[i].y = rand() % 5 + 3;
+    vel[i].y = rand() % 5 + 5;
     vel[i].x = 0;
     balls[i] = circle_create(rand() % attr.width, rand() % attr.height, vel[i].x, vel[i].y, 10);
-    prevXs[i] = -1;
+    /*prevXs[i] = -1;*/
   }
 
   init_fps_counter();
@@ -72,50 +72,28 @@ void* game_loop(void *args){
 
     // Update ball positions
     for(int i = 0; i < LEN; i++){
-      int newY = balls[i].y + (vel[i].y * milli_diff);
-      if (newY >= attr.height){ // Probably place this after collision detection
-        balls[i].y = 0;
-        balls[i].x = rand() % attr.width;
-      }
-      else{
-        int collided = 0;
-        for (int j = 0; j < obstCount; j++){
-          /*XPoint center1 = circle_get_center(obstacles[j]);*/
-          Circle obst = obstacles[j];
-          Circle ball = balls[i];
-          /*int r1 = obstacles[j].radius;*/
-          /*int r2 = obstacles[j].radius;*/
-          int nextDist = euclid_dist_circles(ball, obst);
-          if (nextDist < obst.radius + ball.radius){
-            // Intersects
-            if (obst.x > ball.x){
-              if (balls[i].x - vel[i].y == prevXs[i]){
-                collided = 1; // Keep it still when stuck
-                break;
-              }
-              else{
-                prevXs[i] = balls[i].x;
-                balls[i].x -= vel[i].y;
-              }
-            }
-            else{
-              if (balls[i].x + vel[i].y == prevXs[i]){
-                collided = 1; // Keep it still when stuck
-                break;
-              }
-              else{
-                prevXs[i] = balls[i].x;
-                balls[i].x += vel[i].y;
-              }
-            }
-            collided = 1;
-            break;
-          }
-        }
-        if (!collided){
-          balls[i].y = newY;
+      /*int newY = balls[i].y + (vel[i].y * milli_diff);*/
+      /*if (newY >= attr.height){ // Probably place this after collision detection*/
+        /*balls[i].y = 0;*/
+        /*balls[i].x = rand() % attr.width;*/
+      /*}*/
+      /*else{*/
+      int collided = 0;
+      for (int j = 0; j < obstCount; j++){
+        Circle obst = obstacles[j];
+        Circle ball = balls[i];
+        if (obst_ball_collision(obst, &(balls[i]))){
+          collided = 1;
+          break;
         }
       }
+      if (!collided){
+        /*balls[i].y = newY;*/
+        update_velocity(&(balls[i]));
+      }
+      update_position(&(balls[i]), milli_diff, attr.width, attr.height);
+      /*update_position(&(balls[i]));*/
+      
     }
 
 
