@@ -3,7 +3,6 @@
 static struct Fps_info fps_info;
 static struct timeval prev_time;
 
-// Returns if it printed the fps, meaning a second had passed and variables should reset.
 void print_fps(Display* dis, Window win, GC gc){
   fps_info.frameCounter++;
   time_t curr = time(0);
@@ -27,16 +26,13 @@ void print_fps(Display* dis, Window win, GC gc){
   XFillRectangle(dis, win, gc, 10, 10, 100, 40);
   XSetForeground(dis, str_gc, 0x319e28);
   XDrawString(dis, win, str_gc, 15, 40, str, 10);
-  /*return retvalue;*/
 }
 
 
 void init_fps_counter(){
-  /*struct Fps_info fps_info;*/
   fps_info.frameCounter = 0;
   fps_info.fps = 0;
   fps_info.prev = time(0);
-  /*return fps_info;*/
 }
 
 

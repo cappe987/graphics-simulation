@@ -43,7 +43,7 @@ struct bufAttr{
 void* game_loop(void *args){
   const int LEN = 100;
   Circle balls[LEN];
-  int prevXs[LEN];
+  int prevXs[LEN]; // Used to make balls not wobble when stuck. Refactor this.
   Velocity vel[LEN];
   struct bufAttr bufattr = * (struct bufAttr*) args;
   XWindowAttributes attr = bufattr.attr;
@@ -59,14 +59,18 @@ void* game_loop(void *args){
   init_fps_counter();
   init_game_time();
 
+  XdbeSwapInfo info;
+  info.swap_window = win;
+  info.swap_action = XdbeBackground;
+
   while(1){
     usleep(10000); // Maybe make frames not dependent on fps
     XLockDisplay(dis);
     draw_circles(dis, buf, gc, balls, LEN, 0xFFFFFF); // Clear previous balls
 
-    // Update ball positions
     float milli_diff = get_millisecond_diff();
 
+    // Update ball positions
     for(int i = 0; i < LEN; i++){
       int newY = balls[i].y + (vel[i].y * milli_diff);
       if (newY >= attr.height){ // Probably place this after collision detection
@@ -119,16 +123,8 @@ void* game_loop(void *args){
     draw_circles(dis, buf, gc, balls, LEN, 0x0000FF);
     draw_circles(dis, buf, gc, obstacles, obstCount, 0x00FF00);
 
-    /*usleep(10000);*/
-    /*XSetForeground(dis, gc, 0x0000FF);*/
-    /*XFillArcs(dis, win, gc, balls, LEN);*/
-    /*XSetForeground(dis, gc, 0xFFFFFF);*/
-
     print_fps(dis, buf, gc);
     
-    XdbeSwapInfo info;
-    info.swap_window = win;
-    info.swap_action = XdbeBackground;
     XdbeSwapBuffers(dis, &info, 1);
     XFlush(dis);
     XUnlockDisplay(dis);
@@ -155,22 +151,8 @@ int main() {
   /* look for events forever... */
   while(1) {		
     /* get the next event and stuff it into our event variable.
-    Note:  only events we set the mask for are detected!
-    */
+    Note:  only events we set the mask for are detected!  */
     XNextEvent(dis, &event);
-
-    /*if (isFirst){*/
-      /*redraw();*/
-      /*XGetWindowAttributes(dis, win, &attr);*/
-      /*XdbeBackBuffer buf = XdbeAllocateBackBufferName(dis, win, XdbeBackground);*/
-      /*struct bufAttr info;*/
-      /*info.attr = attr;*/
-      /*info.buf = buf;*/
-      /*pthread_create(&thread_id, NULL, game_loop, &info);*/
-      /*isFirst = 0;*/
-    /*}*/
-    /*continue;*/
-    ////////////////////////////////////////////////////////////////////
 
     if (event.type==Expose && event.xexpose.count==0) {
       XLockDisplay(dis);
@@ -204,10 +186,10 @@ int main() {
       int x = event.xbutton.x;
       int y = event.xbutton.y;
 
-      if (event.xbutton.button == Button1){ // Add green
+      if (event.xbutton.button == Button1){ // Left click
         add_green(x, y, obstacles, &obstCount);
       }
-      else if (event.xbutton.button == Button3){ // Remove green
+      else if (event.xbutton.button == Button3){ // Right click 
         remove_green(dis, win, gc, x, y, obstacles, &obstCount);
       }
       XUnlockDisplay(dis);
@@ -220,16 +202,17 @@ void init_x() {
   /* get the colors black and white (see section for details) */        
   unsigned long black,white;
 
-  dis=XOpenDisplay((char *)0);
-  screen=DefaultScreen(dis);
-  black=BlackPixel(dis,screen),
-  white=WhitePixel(dis, screen);
-  win=XCreateSimpleWindow(dis,DefaultRootWindow(dis), 0, 0,	300, 300, 5, black, white);
-  XSetStandardProperties(dis,win,"Howdy","Hi",None,NULL,0,NULL);
+  dis    = XOpenDisplay((char *)0);
+  screen = DefaultScreen(dis);
+  black  = BlackPixel(dis, screen),
+  white  = WhitePixel(dis, screen);
+  win    = XCreateSimpleWindow(dis, DefaultRootWindow(dis), 0, 0,	300, 300, 5, black, white);
+  XSetStandardProperties(dis, win, "Howdy", "Hi", None, NULL, 0, NULL);
+  // Set masks for what events to detect
   XSelectInput(dis, win, ExposureMask|ButtonPressMask|KeyPressMask|ButtonMotionMask|ButtonReleaseMask);
-  gc=XCreateGC(dis, win, 0,0);        
-  XSetBackground(dis,gc,white);
-  XSetForeground(dis,gc,black);
+  gc = XCreateGC(dis, win, 0,0);        
+  XSetBackground(dis, gc, white);
+  XSetForeground(dis, gc, black);
   XClearWindow(dis, win);
   XMapRaised(dis, win);
 };

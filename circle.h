@@ -20,8 +20,6 @@ typedef struct {
 
 void draw_circles(Display* dis, Window win, GC gc, Circle* cs, int n, unsigned long color);
 
-XPoint circle_get_center(Circle arc);
-int    circle_get_radius(Circle arc);
 Circle circle_create(unsigned int x, unsigned int y, int vx, int vy, int radius);
 
 

@@ -10,15 +10,13 @@
 
 
 
-int euclid_dist(int x1, int y1, int x2, int y2);
-int euclid_dist_xpoint(int x1, int y1, XPoint xy);
-int euclid_dist_xpoint2(XPoint xy1, XPoint xy2);
+int euclid_dist_circle(int x1, int y1, Circle c);
 int euclid_dist_circles(Circle c1, Circle c2);
 
 
 
 
-
+// Remove this after fixing the bouncing
 typedef struct{
   float x;
   float y;
