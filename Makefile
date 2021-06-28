@@ -2,7 +2,7 @@
 all: build
 
 
-files = fps.c collision.c main.c
+files = circle.c fps.c collision.c main.c
 
 dirs = -I /usr/include/freetype2/
 

@@ -1,7 +1,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/Xos.h>
-/*#include <X11/extensions/Xdbe.h>*/
+#include <X11/extensions/Xdbe.h>
 #include <X11/Xft/Xft.h>
 #include <X11/extensions/Xrender.h>
 #include <X11/Xcms.h>
@@ -15,6 +15,7 @@
 
 #include "collision.h"
 #include "fps.h"
+#include "circle.h"
 
 /* here are our X variables */
 Display *dis;
@@ -23,7 +24,7 @@ Window win;
 GC gc;
 
 
-XArc obstacles[100];
+Circle obstacles[100];
 unsigned int obstCount = 0;
 
 /* here are our X routines declared! */
@@ -33,54 +34,41 @@ void redraw();
 
 struct bufAttr{
   XWindowAttributes attr;
-  /*XdbeBackBuffer buf;*/
+  XdbeBackBuffer buf;
 };
 
 
 
 
-void* movingBlocks(void *args){
-  const int LEN = 500;
-  /*XPoint balls[LEN];*/
-  XArc balls[LEN];
+void* game_loop(void *args){
+  const int LEN = 100;
+  Circle balls[LEN];
   int prevXs[LEN];
-  Direction dirs[LEN];
+  Velocity vel[LEN];
   struct bufAttr bufattr = * (struct bufAttr*) args;
   XWindowAttributes attr = bufattr.attr;
-  /*XdbeBackBuffer buf = bufattr.buf;*/
+  XdbeBackBuffer buf = bufattr.buf;
 
   for (int i = 0; i < LEN; i++){
-    balls[i] = circle_create(rand() % attr.width, rand() % attr.height, 10);
-    dirs[i].y = rand() % 5 + 3;
-    dirs[i].x = 0;
+    vel[i].y = rand() % 5 + 3;
+    vel[i].x = 0;
+    balls[i] = circle_create(rand() % attr.width, rand() % attr.height, vel[i].x, vel[i].y, 10);
     prevXs[i] = -1;
   }
 
-  struct Fps_info fps_info = init_fps_counter();
-
-  struct timeval prev_time;
-  gettimeofday(&prev_time, NULL);
+  init_fps_counter();
+  init_game_time();
 
   while(1){
     usleep(10000); // Maybe make frames not dependent on fps
     XLockDisplay(dis);
-    draw_circles(dis, win, gc, balls, LEN, 0xFFFFFF); // Clear previous balls
+    draw_circles(dis, buf, gc, balls, LEN, 0xFFFFFF); // Clear previous balls
 
     // Update ball positions
-    struct timeval curr_time;
-    gettimeofday(&curr_time, NULL);
-
-    float milli_diff; 
-    if (prev_time.tv_usec > curr_time.tv_usec){
-      milli_diff = (1000000 - prev_time.tv_usec + curr_time.tv_usec)/10000.0;
-    }
-    else{
-      milli_diff = (curr_time.tv_usec - prev_time.tv_usec)/10000.0;
-    }
-    prev_time = curr_time;
+    float milli_diff = get_millisecond_diff();
 
     for(int i = 0; i < LEN; i++){
-      int newY = balls[i].y + (dirs[i].y * milli_diff);
+      int newY = balls[i].y + (vel[i].y * milli_diff);
       if (newY >= attr.height){ // Probably place this after collision detection
         balls[i].y = 0;
         balls[i].x = rand() % attr.width;
@@ -88,31 +76,32 @@ void* movingBlocks(void *args){
       else{
         int collided = 0;
         for (int j = 0; j < obstCount; j++){
-          XPoint center1 = circle_get_center(obstacles[j]);
-          int r1 = circle_get_radius(obstacles[j]);
-          XPoint center2 = circle_get_center(balls[i]);
-          int r2 = circle_get_radius(balls[i]);
-          int nextDist = euclid_dist_xpoint2(center1, center2);
-          if (nextDist < r1 + r2){
+          /*XPoint center1 = circle_get_center(obstacles[j]);*/
+          Circle obst = obstacles[j];
+          Circle ball = balls[i];
+          /*int r1 = obstacles[j].radius;*/
+          /*int r2 = obstacles[j].radius;*/
+          int nextDist = euclid_dist_circles(ball, obst);
+          if (nextDist < obst.radius + ball.radius){
             // Intersects
-            if (center1.x > center2.x){
-              if (balls[i].x - dirs[i].y == prevXs[i]){
+            if (obst.x > ball.x){
+              if (balls[i].x - vel[i].y == prevXs[i]){
                 collided = 1; // Keep it still when stuck
                 break;
               }
               else{
                 prevXs[i] = balls[i].x;
-                balls[i].x -= dirs[i].y;
+                balls[i].x -= vel[i].y;
               }
             }
             else{
-              if (balls[i].x + dirs[i].y == prevXs[i]){
+              if (balls[i].x + vel[i].y == prevXs[i]){
                 collided = 1; // Keep it still when stuck
                 break;
               }
               else{
                 prevXs[i] = balls[i].x;
-                balls[i].x += dirs[i].y;
+                balls[i].x += vel[i].y;
               }
             }
             collided = 1;
@@ -127,16 +116,20 @@ void* movingBlocks(void *args){
 
 
     // Draw new balls
-    draw_circles(dis, win, gc, balls, LEN, 0x0000FF);
-    draw_circles(dis, win, gc, obstacles, obstCount, 0x00FF00);
+    draw_circles(dis, buf, gc, balls, LEN, 0x0000FF);
+    draw_circles(dis, buf, gc, obstacles, obstCount, 0x00FF00);
 
     /*usleep(10000);*/
     /*XSetForeground(dis, gc, 0x0000FF);*/
     /*XFillArcs(dis, win, gc, balls, LEN);*/
     /*XSetForeground(dis, gc, 0xFFFFFF);*/
 
-    print_fps(dis, win, gc, &fps_info);
-
+    print_fps(dis, buf, gc);
+    
+    XdbeSwapInfo info;
+    info.swap_window = win;
+    info.swap_action = XdbeBackground;
+    XdbeSwapBuffers(dis, &info, 1);
     XFlush(dis);
     XUnlockDisplay(dis);
   }
@@ -149,18 +142,15 @@ void* movingBlocks(void *args){
 int main() {
 
   pthread_t thread_id;
-  /*pthread_mutex_init(&lock, NULL);*/
 
   XEvent event;		/* the XEvent declaration !!! */
   KeySym key;		/* a dealie-bob to handle KeyPress Events */	
   char text[255];		/* a char buffer for KeyPress Events */
-  /*int button_holding = 0;*/
   int isFirst = 1;
   XInitThreads();
 
   init_x();
-  XWindowAttributes attr;
-  XGetWindowAttributes(dis, win, &attr);
+  struct bufAttr attr;
 
   /* look for events forever... */
   while(1) {		
@@ -176,7 +166,7 @@ int main() {
       /*struct bufAttr info;*/
       /*info.attr = attr;*/
       /*info.buf = buf;*/
-      /*pthread_create(&thread_id, NULL, movingBlocks, &info);*/
+      /*pthread_create(&thread_id, NULL, game_loop, &info);*/
       /*isFirst = 0;*/
     /*}*/
     /*continue;*/
@@ -189,8 +179,9 @@ int main() {
       if (isFirst){ // Start rain thread first iteration.
         // This stupid first redraw only happens because of i3 resizing the window.
         // Would probably have to be adapted to fit other WM's.
-        XGetWindowAttributes(dis, win, &attr);
-        pthread_create(&thread_id, NULL, movingBlocks, &attr);
+        XGetWindowAttributes(dis, win, &attr.attr);
+        attr.buf = XdbeAllocateBackBufferName(dis, win, XdbeBackground);
+        pthread_create(&thread_id, NULL, game_loop, &attr);
         isFirst = 0;
       }
       XUnlockDisplay(dis);
@@ -210,69 +201,18 @@ int main() {
     }
     else if (event.type==ButtonPress) {
       XLockDisplay(dis);
-      /* tell where the mouse Button was Pressed */
-      int x=event.xbutton.x,
-          y=event.xbutton.y;
+      int x = event.xbutton.x;
+      int y = event.xbutton.y;
 
-      /*char text[20];*/
-      /*strcpy(text,"X is FUN!");*/
-      // XSetForeground(dis,gc,rand()%event.xbutton.x%255);
-      /*XDrawString(dis,win,gc,x,y, text, strlen(text));*/
-      // printf("DRAWING\n");
-      if (event.xbutton.button == Button1){
-        /*XSetForeground(dis, gc, 0x00FF00);*/
-        /*XFillArc(dis, win, gc, x-(radius/2), y-(radius/2), radius, radius, 0, 360*64);*/
-        /*XSetForeground(dis, gc, 0x000000);*/
-        /*XDrawPoint(dis, win, gc, x, y);*/
-        /*XDrawPoint(dis, win, gc, x+25, y+25);*/
-        XArc obst = circle_create(x, y, 100);
-        obstacles[obstCount] = obst;
-        // XFillRectangle(dis, win, gc, x, y, 500, 500);
-        /*button_holding = 1;*/
-        obstCount++;
+      if (event.xbutton.button == Button1){ // Add green
+        add_green(x, y, obstacles, &obstCount);
       }
-      else if (event.xbutton.button == Button3){
-        /*XClearArea(dis, win, x, y, 50, 50, 0);*/
-        /*button_holding = 3;*/
-        for (int i = 0; i < obstCount; i++){
-          XPoint center = circle_get_center(obstacles[i]);
-          int r = circle_get_radius(obstacles[i]);
-          int dist = euclid_dist_xpoint(x, y, center);
-          if (dist < r){
-            /*XSetForeground(dis, gc, 0xFFFFFF);*/
-            /*XFillArc(dis, win, gc, obstacles[i].x-(radius/2), obstacles[i].y-(radius/2), radius, radius, 0, 360*64);*/
-            draw_circles(dis, win, gc, &(obstacles[i]), 1, 0xFFFFFF);
-            for (int j = i; j < obstCount-1; j++){
-              obstacles[j] = obstacles[j+1];
-            }
-            obstCount--;
-            break;
-          }
-        }
+      else if (event.xbutton.button == Button3){ // Remove green
+        remove_green(dis, win, gc, x, y, obstacles, &obstCount);
       }
-       /*XDrawImageString(dis, win, gc, x, y, "HELLO", 5);*/
       XUnlockDisplay(dis);
     }
-    /*else if (event.type == ButtonRelease){*/
-      /*button_holding = 0;*/
-      /*// if (event.xbutton.button == Button1){*/
-      /*//   printf("Released\n");*/
-      /*//   button_holding = 0;*/
-      /*// }*/
-    /*}*/
-    /*else if (event.type == MotionNotify){*/
-      /*int x=event.xbutton.x,*/
-          /*y=event.xbutton.y;*/
-      /*if (button_holding == 1){*/
-        /*XDrawArc(dis, win, gc, x-25, y-25, 50, 50, 0, 360*64);*/
-      /*}*/
-      /*if (button_holding == 3){*/
-        /*XClearArea(dis, win, x-25, y-25, 50, 50, 0);*/
-      /*}*/
-
-    /*}*/
     XUnlockDisplay(dis);
-
   }
 }
 
