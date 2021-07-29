@@ -66,7 +66,9 @@ void* game_loop(void *args){
   while(1){
     usleep(10000); // Maybe make frames not dependent on fps
     XLockDisplay(dis);
-    draw_circles(dis, buf, gc, balls, LEN, 0xFFFFFF); // Clear previous balls
+    /*draw_circles(dis, buf, gc, balls, LEN, 0xFFFFFF); // Clear previous balls*/
+    /*XClearWindow(dis, win); */
+    // No longer needed when using double buffers since a buffer always starts empty.
 
     float milli_diff = get_millisecond_diff();
 

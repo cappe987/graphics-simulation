@@ -88,6 +88,11 @@ void update_position(Circle* ball, float milli_diff, int width, int height){
 }
 
 
+// At least for right side, x is x of collision
+float upper_circle_deriv(int x, int r){
+  return -(x/sqrt(pow(r, 2) - pow(x, 2)));
+}
+
 
 // Update velocity and post accordingly
 int obst_ball_collision(Circle obst, Circle* ball){
@@ -95,6 +100,7 @@ int obst_ball_collision(Circle obst, Circle* ball){
   if (nextDist >= obst.radius + ball->radius){
     return 0; // Doesn't collide
   }
+
 
   // Collided
   /*ball->vy = -0.9 * ball->vy;*/
