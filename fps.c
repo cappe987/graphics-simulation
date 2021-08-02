@@ -26,6 +26,7 @@ void print_fps(Display* dis, Window win, GC gc){
   XFillRectangle(dis, win, gc, 10, 10, 100, 40);
   XSetForeground(dis, str_gc, 0x319e28);
   XDrawString(dis, win, str_gc, 15, 40, str, 10);
+  XFreeGC(dis, str_gc);
 }
 
 
